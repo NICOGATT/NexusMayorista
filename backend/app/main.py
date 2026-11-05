@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from app.auth import usuario_actual
 from app.config import get_settings
 from app.errores import registrar_manejadores
-from app.routers import health, usuarios
+from app.routers import health, listas_precios, productos, usuarios
 
 
 def configurar_logging(nivel: str) -> None:
@@ -34,6 +34,8 @@ def create_app() -> FastAPI:
     # Todo lo que cuelga de /api/v1 exige un JWT válido de Supabase.
     api = APIRouter(prefix="/api/v1", dependencies=[Depends(usuario_actual)])
     api.include_router(usuarios.router)
+    api.include_router(productos.router)
+    api.include_router(listas_precios.router)
     app.include_router(api)
 
     return app

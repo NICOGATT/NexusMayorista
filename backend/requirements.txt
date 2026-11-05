@@ -7,3 +7,4 @@ pydantic-settings==2.16.2
 anthropic==2.4.0
 httpx==0.28.1
 PyJWT==2.15.1
+python-multipart==0.0.33
