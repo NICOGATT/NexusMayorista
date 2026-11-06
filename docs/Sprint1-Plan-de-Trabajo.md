@@ -125,7 +125,8 @@ Cada día tiene una lista para ir tildando y una condición de "listo" para sabe
 ### Día 6 · Lun 09/11 · HU-04 Servicio de IA
 
 - [ ] Función que arma el bloque `<lista_precios>` a partir de la lista activa.
-- [ ] Servicio `interpretar_mensaje` con `messages.parse` y prompt caching (sección 4).
+- [ ] Interfaz `InterpreteIA` con `OllamaInterprete` y `ClaudeInterprete`, elegida por `IA_PROVEEDOR` (sección 4, "Proveedor de IA intercambiable"). Instalar Ollama y bajar un modelo (ej. `qwen2.5:14b`).
+- [ ] Servicio `interpretar_mensaje` con `messages.parse` y prompt caching para Claude, y `format` con el JSON Schema para Ollama (sección 4).
 - [ ] Manejar `stop_reason == "refusal"` y los errores de la API: la interacción queda con `estado_ia = error`.
 - [ ] `POST /mensajes/analizar`: interpreta, calcula y devuelve; solo guarda si `guardar=true`.
 - [ ] Guardar `resultado_ia`, modelo y tokens en `interacciones`.
@@ -140,6 +141,7 @@ Cada día tiene una lista para ir tildando y una condición de "listo" para sabe
 - [ ] Primera corrida; guardar el resultado como línea de base.
 - [ ] Corregir según los fallos (reglas del prompt o alias del catálogo) y volver a correr. Como máximo 3 vueltas.
 - [ ] Comparar esfuerzo `low` contra el valor por defecto: precisión, tiempo y costo.
+- [ ] Correr la evaluación con Ollama y con Claude (`--proveedor`) y decidir cuál va a producción según precisión, tiempo y costo. Anotar los números en el log.
 - [ ] `POST /interacciones/{id}/reprocesar`.
 
 **Listo cuando:** la evaluación da 90 % o más. **Hito: precisión de la IA ≥ 90 %.**

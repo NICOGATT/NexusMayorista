@@ -58,7 +58,7 @@ El webhook responde al instante; la tarea de fondo consulta a Claude y el motor 
 | Base de datos | Supabase (PostgreSQL 15+) | SQL relacional, `jsonb` para guardar la salida de Claude, Auth y Realtime incluidos |
 | Acceso a datos | SQLAlchemy 2 + Alembic (migraciones) | Migraciones versionadas en el repositorio |
 | Cola de trabajos | Tarea en segundo plano de FastAPI (Sprint 1); Redis + RQ/Arq cuando crezca el volumen | El webhook debe responder 200 en menos de 5 s a Meta |
-| IA | API de Claude, SDK `anthropic`, modelo `claude-opus-5-5` | Salidas estructuradas (`messages.parse`) con esquema Pydantic |
+| IA | API de Claude, SDK `anthropic`, modelo `claude-opus-5-5`; Ollama como alternativa local (`IA_PROVEEDOR`) | Salidas estructuradas (`messages.parse`) con esquema Pydantic; ver [Proveedor de IA intercambiable](#proveedor-de-ia-intercambiable-claude-u-ollama) |
 | Frontend (tablero) | Next.js + Supabase JS (Realtime) | El tablero se actualiza solo cuando entra un mensaje |
 | Canales | WhatsApp Business Cloud API, Instagram Messaging API (Meta Graph API) | Webhooks oficiales, sin scraping |
 | Despliegue | Backend en Railway/Render/Fly.io; frontend en Vercel | HTTPS público, requisito de los webhooks de Meta |
@@ -364,6 +364,7 @@ La API es REST bajo el prefijo `/api/v1`, con JSON en ambos sentidos. Los webhoo
 | GET / PATCH | `/api/v1/clientes/{id}` | Ficha del cliente con sus interacciones y presupuestos |
 | GET / POST | `/api/v1/productos` | Catálogo; alta de productos y alias |
 | PATCH | `/api/v1/productos/{id}` | Editar talles, colores, alias o desactivar |
+| POST | `/api/v1/productos/importar` | Alta o actualización masiva del catálogo desde CSV (`codigo,nombre,categoria` + opcionales `talles,colores,alias,descripcion,activo`; listas separadas por `\|`) |
 | GET | `/api/v1/listas-precios/activa` | Lista vigente con sus precios |
 | POST | `/api/v1/listas-precios/importar` | Carga una lista nueva desde CSV (`codigo,talle,cantidad_minima,precio_unitario`) |
 | POST | `/api/v1/listas-precios/{id}/activar` | Activa una lista y desactiva la anterior en una transacción |
@@ -598,6 +599,59 @@ El backend no confía en los importes del JSON: los usa solo para detectar discr
 3. Si algún valor difiere del que devolvió Claude, guarda el valor de la base y marca `requiere_revision = true` con el motivo "diferencia de precio IA vs. lista".
 4. Si `talle` o `color` no están en `productos.talles` / `productos.colores`, marca el ítem para revisión.
 
+### Proveedor de IA intercambiable (Claude u Ollama)
+
+El resto del sistema no depende de quién interpreta el mensaje: recibe un `PedidoExtraido` validado y el motor de cálculo fija los importes. Por eso el servicio se escribe detrás de una interfaz chica con dos implementaciones, y se elige cuál usar por variable de entorno.
+
+```python
+# app/ia/interprete.py
+from typing import Protocol
+
+
+class ResultadoIA(BaseModel):
+    pedido: PedidoExtraido
+    modelo: str                 # se guarda en interacciones.modelo_ia
+    tokens_entrada: int | None
+    tokens_salida: int | None
+
+
+class InterpreteIA(Protocol):
+    def interpretar(self, texto: str, canal: str, fecha: str, lista_precios: str) -> ResultadoIA: ...
+
+
+def obtener_interprete(settings: Settings) -> InterpreteIA:
+    if settings.ia_proveedor == "ollama":
+        return OllamaInterprete(settings.ollama_url, settings.ollama_modelo)
+    return ClaudeInterprete(settings.anthropic_api_key)
+```
+
+| Variable | Valores | Uso |
+| --- | --- | --- |
+| `IA_PROVEEDOR` | `claude` (por defecto) u `ollama` | Elige la implementación |
+| `OLLAMA_URL` | `http://localhost:11434` | Servidor de Ollama |
+| `OLLAMA_MODELO` | ej. `qwen2.5:14b`, `llama3.1:8b` | Modelo local; probar varios en la evaluación |
+
+**`ClaudeInterprete`** es la llamada de la sección anterior (`messages.parse`, prompt caching, control de `refusal`).
+
+**`OllamaInterprete`** usa `POST {OLLAMA_URL}/api/chat` con `httpx` (ya está en las dependencias, no hace falta otra librería):
+
+- Mismo *system prompt* y mismo bloque `<lista_precios>` como mensaje `system`; el texto del cliente va en `user`, igual que con Claude.
+- Salida estructurada con `"format": PedidoExtraido.model_json_schema()`, `"stream": false` y `"options": {"temperature": 0}` para que sea repetible.
+- La respuesta (`message.content`) se valida con `PedidoExtraido.model_validate_json(...)`. Si no valida (los modelos chicos a veces devuelven JSON incompleto), se reintenta una vez y después la interacción queda con `estado_ia = 'error'`, igual que un error de la API de Claude.
+- Tokens: `prompt_eval_count` y `eval_count` de la respuesta.
+- No hay prompt caching explícito ni `refusal`; timeout más largo (60 s) porque en CPU puede tardar.
+
+**Cuándo usar cada uno:**
+
+| | Ollama (local) | Claude (API) |
+| --- | --- | --- |
+| Costo por mensaje | Ninguno (usa tu máquina) | Por tokens |
+| Precisión con jerga y pedidos complejos | Menor en modelos de 7–14B; hay que medirla | Más alta |
+| Producción | El webhook necesita el modelo siempre prendido; sin GPU es lento y con GPU es caro | Llamada HTTP, nada que alojar |
+| Privacidad | Los mensajes no salen de la máquina | Los mensajes van a la API |
+
+**Decisión:** se desarrolla y se prueba a mano con Ollama (día 6), y el script de evaluación (día 7) corre los 30 casos con los dos proveedores y compara precisión, tiempo por mensaje y costo. Si Ollama llega al umbral de HU-04 (90 %) dentro del objetivo de 30 segundos, puede usarse también en producción; si no, producción usa Claude y Ollama queda para desarrollo. La decisión y los números quedan anotados en el log del sprint.
+
 ## 5. Historias de usuario
 
 El Sprint 1 tiene 8 historias y 45 puntos. Con una sola persona en el equipo se comprometen las imprescindibles (37 puntos); HU-03 y HU-07 entran solo si sobra tiempo.
@@ -626,7 +680,7 @@ El Sprint 1 tiene 8 historias y 45 puntos. Con una sola persona en el equipo se 
 3. **Dado** un CSV con un código que no existe en el catálogo, **cuando** lo importo, **entonces** la importación se rechaza completa e indica la línea y el código.
 4. **Dada** una lista activa, **cuando** activo otra, **entonces** la anterior queda inactiva y nunca hay dos activas.
 
-**Notas técnicas:** `POST /productos`, `POST /listas-precios/importar`, `POST /listas-precios/{id}/activar`. Tablas `productos`, `listas_precios`, `precios`.
+**Notas técnicas:** `POST /productos`, `POST /productos/importar`, `POST /listas-precios/importar`, `POST /listas-precios/{id}/activar`. Tablas `productos`, `listas_precios`, `precios`. Para la carga inicial sin API desplegada: `python -m scripts.cargar_catalogo` (desde `backend/`; ver ejemplos en `docs/ejemplos/`).
 
 ### HU-02 · Recibir mensajes de WhatsApp
 
