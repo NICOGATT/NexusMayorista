@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.errores import ErrorAPI
 from app.models import Producto
-from app.schemas.catalogo import ProductoCrear, ProductoEditar, ProductoSalida
+from app.schemas.catalogo import (
+    ImportacionCatalogoResultado,
+    ProductoCrear,
+    ProductoEditar,
+    ProductoSalida,
+)
+from app.services.importar_catalogo import aplicar_catalogo, validar_catalogo_csv
+from app.services.importar_csv import TAMANIO_MAXIMO, decodificar
 
 router = APIRouter(prefix="/productos", tags=["catálogo"])
 
@@ -52,6 +59,39 @@ def crear_producto(datos: ProductoCrear, db: DB) -> ProductoSalida:
     db.add(producto)
     _guardar(db, producto)
     return ProductoSalida.model_validate(producto)
+
+
+@router.post(
+    "/importar",
+    summary="Alta o actualización masiva del catálogo desde CSV",
+    description=(
+        "Cabecera `codigo,nombre,categoria` y, opcionales, `talles,colores,alias,"
+        "descripcion,activo`. Talles, colores y alias van separados por `|` "
+        "(ej. `S|M|L`). Si el código existe se actualizan las columnas presentes; si no, "
+        "se crea. Se validan todas las filas: si alguna falla no se guarda nada."
+    ),
+)
+def importar_catalogo(
+    db: DB,
+    archivo: Annotated[UploadFile, File(description="Archivo .csv")],
+) -> ImportacionCatalogoResultado:
+    contenido = archivo.file.read(TAMANIO_MAXIMO + 1)
+    if len(contenido) > TAMANIO_MAXIMO:
+        raise ErrorAPI(
+            status.HTTP_413_CONTENT_TOO_LARGE, "archivo_muy_grande", "El CSV supera los 2 MB."
+        )
+    resultado = validar_catalogo_csv(decodificar(contenido))
+    if not resultado.es_valido:
+        raise ErrorAPI(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "csv_invalido",
+            [e.a_dict() for e in resultado.errores],
+        )
+    creados, actualizados = aplicar_catalogo(db, resultado)
+    db.commit()  # todo el catálogo en una sola transacción
+    return ImportacionCatalogoResultado(
+        filas=len(resultado.filas), creados=creados, actualizados=actualizados
+    )
 
 
 @router.get("", summary="Catálogo, con filtros opcionales")

@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 
 COLUMNAS = ("codigo", "talle", "cantidad_minima", "precio_unitario")
 MAX_ERRORES = 100
+TAMANIO_MAXIMO = 2 * 1024 * 1024  # 2 MB: alcanza de sobra para miles de filas
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,7 @@ def decodificar(contenido: bytes) -> str:
         return contenido.decode("cp1252")
 
 
-def _separador(primera_linea: str) -> str:
+def detectar_separador(primera_linea: str) -> str:
     return ";" if primera_linea.count(";") > primera_linea.count(",") else ","
 
 
@@ -103,7 +104,7 @@ def validar_csv(texto: str, catalogo: dict[str, ProductoCatalogo]) -> ResultadoV
         error(1, None, None, "El archivo está vacío.")
         return resultado
 
-    lector = csv.reader(io.StringIO(texto), delimiter=_separador(lineas[0]))
+    lector = csv.reader(io.StringIO(texto), delimiter=detectar_separador(lineas[0]))
     cabecera = [c.strip().lower() for c in next(lector)]
     if tuple(cabecera) != COLUMNAS:
         error(

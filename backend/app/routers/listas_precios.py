@@ -3,7 +3,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,13 +16,12 @@ from app.schemas.catalogo import (
     ListaPreciosSalida,
     PrecioSalida,
 )
-from app.services.importar_csv import ProductoCatalogo, decodificar, validar_csv
+from app.services import listas_precios as servicio
+from app.services.importar_csv import TAMANIO_MAXIMO, decodificar, validar_csv
 
 router = APIRouter(prefix="/listas-precios", tags=["listas de precios"])
 
 DB = Annotated[Session, Depends(get_db)]
-
-TAMANIO_MAXIMO = 2 * 1024 * 1024  # 2 MB: alcanza de sobra para miles de filas
 
 
 def _detalle(db: Session, lista: ListaPrecios) -> ListaPreciosDetalle:
@@ -115,11 +114,7 @@ def importar_lista(
             status.HTTP_413_CONTENT_TOO_LARGE, "archivo_muy_grande", "El CSV supera los 2 MB."
         )
 
-    catalogo = {
-        p.codigo.upper(): ProductoCatalogo(id=p.id, codigo=p.codigo, talles=frozenset(p.talles))
-        for p in db.scalars(select(Producto))
-    }
-    resultado = validar_csv(decodificar(contenido), catalogo)
+    resultado = validar_csv(decodificar(contenido), servicio.catalogo_por_codigo(db))
     if not resultado.es_valido:
         raise ErrorAPI(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -127,23 +122,14 @@ def importar_lista(
             [e.a_dict() for e in resultado.errores],
         )
 
-    lista = ListaPrecios(
+    lista = servicio.crear_lista(
+        db,
+        resultado,
         nombre=nombre,
-        moneda=moneda.upper(),
         vigente_desde=vigente_desde,
         vigente_hasta=vigente_hasta,
-        activa=False,
-        precios=[
-            Precio(
-                producto_id=f.producto_id,
-                talle=f.talle,
-                cantidad_minima=f.cantidad_minima,
-                precio_unitario=f.precio_unitario,
-            )
-            for f in resultado.filas
-        ],
+        moneda=moneda,
     )
-    db.add(lista)
     db.commit()  # una sola transacción: la lista y todas sus escalas
     db.refresh(lista)
     return ImportacionResultado(
@@ -161,13 +147,8 @@ def activar_lista(lista_id: uuid.UUID, db: DB) -> ListaPreciosSalida:
     if lista is None:
         raise ErrorAPI(status.HTTP_404_NOT_FOUND, "lista_no_encontrada", str(lista_id))
     if not lista.activa:
-        db.execute(
-            update(ListaPrecios)
-            .where(ListaPrecios.activa.is_(True), ListaPrecios.id != lista.id)
-            .values(activa=False)
-        )
-        lista.activa = True
         try:
+            servicio.activar(db, lista)
             db.commit()
         except IntegrityError as exc:
             # Otra activación ganó la carrera: el índice único impidió dos activas.

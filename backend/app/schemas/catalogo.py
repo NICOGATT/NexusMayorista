@@ -139,3 +139,9 @@ class ListaPreciosDetalle(ListaPreciosSalida):
 class ImportacionResultado(BaseModel):
     lista: ListaPreciosSalida
     filas_cargadas: int
+
+
+class ImportacionCatalogoResultado(BaseModel):
+    filas: int
+    creados: int
+    actualizados: int
