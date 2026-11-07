@@ -17,3 +17,8 @@
 - Estado en Supabase: lista "Mayorista Noviembre 2026" activa con los 2 productos de ejemplo (6 escalas). No es el catálogo real.
 - Sigue: armar `catalogo.csv` y `lista-precios.csv` con los datos reales de la fábrica y cargarlos con el script (`--confirmar`). Push de la rama y PR de HU-01. Deploy a staging (pendiente del día 2). HU-05 (#7) motor de cálculo.
 - Bloqueos: el catálogo real depende de los datos de la fábrica.
+
+## Sáb 07/11
+- Hice (HU-05, día 4): motor `calcular_presupuesto` en `app/services/calculo.py`, función pura con `Decimal`. Escala por cantidad total del producto (configurable a "por ítem"), precio por talle con prioridad sobre el general, ítems sin producto / talle inválido / sin precio no suman y marcan revisión, color inválido o producto inactivo marcan revisión, diferencia de precio IA vs. lista (criterio 4), descuento en monto o porcentaje. `POST /api/v1/presupuestos/calcular` (lista activa o `lista_id`; ítems por `producto_id` o `codigo`; 409 sin lista activa). 39 tests nuevos (103 en total) con los bordes 11, 12, 49 y 50. Probado contra la lista activa de Supabase: el ejemplo de la documentación + 2 XXL + 1 jogger da $301.000 y queda para revisión. **Hito: la API calcula presupuestos.**
+- Sigue: confirmar con la fábrica las preguntas abiertas (escala por producto o por ítem, precios con o sin IVA). Día 5: set de prueba de 30 mensajes reales con su presupuesto esperado.
+- Bloqueos: ninguno. El criterio 5 (30 casos al centavo) depende del set de prueba del día 5.

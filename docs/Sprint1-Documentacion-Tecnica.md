@@ -743,6 +743,21 @@ El Sprint 1 tiene 8 historias y 45 puntos. Con una sola persona en el equipo se 
 
 **Notas técnicas:** `POST /presupuestos/calcular` como función pura; regla de escala por cantidad total del producto (pregunta abierta en la sección 6).
 
+**Implementación** (`app/services/calculo.py`, función `calcular_presupuesto`, sin acceso a la base):
+
+| Caso | Resultado |
+| --- | --- |
+| Escala | Fila con la mayor `cantidad_minima` que no supere el total del producto (todos los talles y colores). Si la fábrica decide "por ítem", se cambia con `escala_por=EscalaPor.ITEM` |
+| Precio por talle | Si el talle tiene filas propias aplicables, mandan; si ninguna aplica por cantidad, se usa la escala general |
+| Sin producto, código inexistente o sin precio en la lista | Sin precio, no suma, revisión |
+| Talle que el producto no tiene | Sin precio, no suma, revisión (no cuenta para la escala) |
+| Color que el producto no tiene / producto inactivo | Con precio, revisión |
+| Cantidad por debajo de la escala mínima | Sin precio, revisión |
+| `precio_propuesto` (IA) distinto del calculado | Queda el del sistema, revisión "Diferencia de precio IA vs. lista" |
+| Descuento | `descuento` (monto) o `descuento_porcentaje` (redondeo al centavo, mitad hacia arriba); nunca mayor al subtotal |
+
+Los importes se calculan con `Decimal`, nunca con `float`. Los precios se toman tal como están en la lista (con o sin IVA según cómo los cargue la fábrica; pregunta abierta).
+
 ### HU-06 · Tablero de prospectos
 
 > Como **vendedor**, quiero ver y mover los prospectos en un tablero, para saber en qué estado está cada venta.

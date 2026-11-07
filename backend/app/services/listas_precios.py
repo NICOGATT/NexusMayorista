@@ -3,12 +3,14 @@
 Ninguna hace commit: la transacción la cierra quien llama.
 """
 
+import uuid
 from datetime import date
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import ListaPrecios, Precio, Producto
+from app.services.calculo import EscalaPrecio, ListaCalculo, ProductoInfo
 from app.services.importar_csv import ProductoCatalogo, ResultadoValidacion
 
 
@@ -62,3 +64,53 @@ def activar(db: Session, lista: ListaPrecios) -> None:
     )
     lista.activa = True
     db.flush()
+
+
+def lista_para_calculo(
+    db: Session,
+    lista: ListaPrecios,
+    producto_ids: set[uuid.UUID],
+    codigos: set[str],
+) -> ListaCalculo:
+    """Foto de la lista con solo los productos que pide el presupuesto."""
+    condiciones = []
+    if producto_ids:
+        condiciones.append(Producto.id.in_(producto_ids))
+    if codigos:
+        condiciones.append(Producto.codigo.in_({c.strip().upper() for c in codigos}))
+    productos = list(db.scalars(select(Producto).where(or_(*condiciones)))) if condiciones else []
+
+    filas = (
+        db.scalars(
+            select(Precio).where(
+                Precio.lista_id == lista.id,
+                Precio.producto_id.in_([p.id for p in productos]),
+            )
+        )
+        if productos
+        else []
+    )
+    return ListaCalculo(
+        id=lista.id,
+        moneda=lista.moneda,
+        productos={
+            p.id: ProductoInfo(
+                id=p.id,
+                codigo=p.codigo,
+                nombre=p.nombre,
+                talles=frozenset(p.talles),
+                colores=frozenset(p.colores),
+                activo=p.activo,
+            )
+            for p in productos
+        },
+        precios=[
+            EscalaPrecio(
+                producto_id=f.producto_id,
+                talle=f.talle,
+                cantidad_minima=f.cantidad_minima,
+                precio_unitario=f.precio_unitario,
+            )
+            for f in filas
+        ],
+    )
