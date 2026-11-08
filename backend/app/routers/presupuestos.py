@@ -9,6 +9,7 @@ from app.db import get_db
 from app.errores import ErrorAPI
 from app.models import ListaPrecios
 from app.schemas.presupuestos import PresupuestoCalculadoSalida, PresupuestoCalcular
+from app.services import reglas_comerciales
 from app.services.calculo import ErrorCalculo, ItemPedido, calcular_presupuesto
 from app.services.listas_precios import lista_para_calculo
 
@@ -24,8 +25,10 @@ DB = Annotated[Session, Depends(get_db)]
         "Recibe ítems ya estructurados (`producto_id` o `codigo`, `talle`, `color`, "
         "`cantidad`) y devuelve precios, subtotales y total con la lista activa (o la "
         "indicada en `lista_id`). La escala se elige por la cantidad total de cada "
-        "producto; el precio por talle manda sobre el general. Los ítems sin producto o "
-        "sin precio no suman y marcan el presupuesto para revisión."
+        "producto (o por ítem, según las reglas comerciales); el precio por talle manda "
+        "sobre el general. Los ítems sin producto o sin precio no suman y marcan el "
+        "presupuesto para revisión. Aplica IVA, pedido mínimo y descuento máximo según "
+        "las reglas comerciales."
     ),
 )
 def calcular(datos: PresupuestoCalcular, db: DB) -> PresupuestoCalculadoSalida:
@@ -54,6 +57,7 @@ def calcular(datos: PresupuestoCalcular, db: DB) -> PresupuestoCalculadoSalida:
             foto,
             descuento=datos.descuento,
             descuento_porcentaje=datos.descuento_porcentaje,
+            reglas=reglas_comerciales.a_reglas_calculo(reglas_comerciales.obtener(db)),
         )
     except ErrorCalculo as exc:
         raise ErrorAPI(status.HTTP_422_UNPROCESSABLE_CONTENT, "calculo_invalido", str(exc)) from exc

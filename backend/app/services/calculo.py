@@ -7,8 +7,8 @@ importes exactos. No toca la base, así se prueba con tests unitarios y es la
 Reglas (sección 4 de la documentación técnica):
 
 1. La escala se elige por la cantidad TOTAL del producto en el pedido, sumando
-   talles y colores (`EscalaPor.PRODUCTO`). Es una pregunta abierta con la
-   fábrica; si responde "por ítem", se cambia con `escala_por=EscalaPor.ITEM`.
+   talles y colores (`EscalaPor.PRODUCTO`), salvo que las reglas comerciales
+   digan "por ítem" (`EscalaPor.ITEM`).
 2. Dentro de esa cantidad se usa la fila con la mayor `cantidad_minima` que no
    la supere.
 3. Si el talle del ítem tiene filas propias aplicables, mandan sobre las
@@ -17,6 +17,10 @@ Reglas (sección 4 de la documentación técnica):
    la lista no suma al total y marca el presupuesto para revisión.
 5. Si la IA propuso un precio distinto del calculado, queda el del sistema y el
    ítem se marca con "diferencia de precio IA vs. lista".
+
+Las respuestas de la fábrica llegan en `ReglasCalculo` (tabla `reglas_comerciales`):
+escala por producto o por ítem, IVA, pedido mínimo y descuento máximo. Una
+pregunta sin responder deja el comportamiento por defecto.
 """
 
 import uuid
@@ -31,6 +35,26 @@ CENTAVO = Decimal("0.01")
 class EscalaPor(StrEnum):
     PRODUCTO = "producto"
     ITEM = "item"
+
+
+class IvaEnPresupuesto(StrEnum):
+    """Qué hacer con el IVA cuando los precios de la lista no lo incluyen."""
+
+    SUMAR = "sumar"  # se suma al total del presupuesto
+    ACLARAR = "aclarar"  # el total queda neto y se aclara "+ IVA"
+
+
+@dataclass(frozen=True)
+class ReglasCalculo:
+    """Respuestas de la fábrica que cambian el cálculo. None = sin responder."""
+
+    escala_por: EscalaPor = EscalaPor.PRODUCTO
+    precios_incluyen_iva: bool | None = None
+    alicuota_iva: Decimal = Decimal("21")
+    iva_en_presupuesto: IvaEnPresupuesto | None = None
+    pedido_minimo_unidades: int | None = None
+    pedido_minimo_monto: Decimal | None = None
+    descuento_maximo_porcentaje: Decimal | None = None
 
 
 # ----------------------------------------------------------------- entradas
@@ -114,6 +138,8 @@ class PresupuestoCalculado:
     total: Decimal
     requiere_revision: bool
     advertencias: list[str] = field(default_factory=list)
+    iva: Decimal = Decimal("0.00")  # IVA sumado al total (solo si las reglas lo piden)
+    leyenda_iva: str | None = None  # cómo leer los importes respecto del IVA
 
 
 class ErrorCalculo(ValueError):
@@ -170,8 +196,10 @@ def calcular_presupuesto(
     *,
     descuento: Decimal | None = None,
     descuento_porcentaje: Decimal | None = None,
-    escala_por: EscalaPor = EscalaPor.PRODUCTO,
+    reglas: ReglasCalculo | None = None,
 ) -> PresupuestoCalculado:
+    reglas = reglas or ReglasCalculo()
+    escala_por = reglas.escala_por
     precios_por_producto: dict[uuid.UUID, list[EscalaPrecio]] = defaultdict(list)
     for fila in lista.precios:
         precios_por_producto[fila.producto_id].append(fila)
@@ -261,14 +289,77 @@ def calcular_presupuesto(
     if not calculados:
         advertencias.append("El pedido no tiene ítems.")
 
+    total_unidades = sum(c.cantidad for c in calculados)
+    neto = (subtotal - monto_descuento).quantize(CENTAVO)
+    observaciones = _controlar_reglas(reglas, subtotal, monto_descuento, neto, total_unidades)
+    iva, leyenda_iva = _iva(reglas, neto)
+
     return PresupuestoCalculado(
         lista_id=lista.id,
         moneda=lista.moneda,
         items=calculados,
-        total_unidades=sum(c.cantidad for c in calculados),
+        total_unidades=total_unidades,
         subtotal=subtotal.quantize(CENTAVO),
         descuento=monto_descuento,
-        total=(subtotal - monto_descuento).quantize(CENTAVO),
-        requiere_revision=requiere_revision or not calculados,
-        advertencias=advertencias,
+        total=neto + iva,
+        requiere_revision=requiere_revision or not calculados or bool(observaciones),
+        advertencias=advertencias + observaciones,
+        iva=iva,
+        leyenda_iva=leyenda_iva,
     )
+
+
+def formato_numero(valor: Decimal | int) -> str:
+    """1234.5 → "1.234,50"; 21.00 → "21" (formato argentino)."""
+    valor = Decimal(valor)
+    if valor == valor.to_integral_value():
+        return f"{int(valor):,}".replace(",", ".")
+    entero, decimales = f"{valor:,.2f}".split(".")
+    return f"{entero.replace(',', '.')},{decimales}"
+
+
+def formato_porcentaje(valor: Decimal | int) -> str:
+    """10.50 → "10,5"; 21.00 → "21"; 10.01 → "10,01"."""
+    texto = formato_numero(valor)
+    return texto.rstrip("0").rstrip(",") if "," in texto else texto
+
+
+def _controlar_reglas(
+    reglas: ReglasCalculo,
+    subtotal: Decimal,
+    descuento: Decimal,
+    neto: Decimal,
+    total_unidades: int,
+) -> list[str]:
+    """Pedido mínimo y descuento máximo: no frenan el cálculo, piden revisión."""
+    observaciones = []
+    if reglas.pedido_minimo_unidades and total_unidades < reglas.pedido_minimo_unidades:
+        observaciones.append(
+            f"El pedido no llega al mínimo de {reglas.pedido_minimo_unidades} unidades."
+        )
+    if reglas.pedido_minimo_monto and neto < reglas.pedido_minimo_monto:
+        observaciones.append(
+            f"El pedido no llega al monto mínimo de ${formato_numero(reglas.pedido_minimo_monto)}."
+        )
+    maximo = reglas.descuento_maximo_porcentaje
+    if maximo is not None and descuento > 0 and subtotal > 0:
+        porcentaje = (descuento * 100 / subtotal).quantize(CENTAVO, ROUND_HALF_UP)
+        if porcentaje > maximo:
+            observaciones.append(
+                f"El descuento ({formato_porcentaje(porcentaje)} %) supera el máximo "
+                f"autorizado ({formato_porcentaje(maximo)} %)."
+            )
+    return observaciones
+
+
+def _iva(reglas: ReglasCalculo, neto: Decimal) -> tuple[Decimal, str | None]:
+    """IVA a sumar y leyenda para el cliente, según lo que respondió la fábrica."""
+    alicuota = formato_porcentaje(reglas.alicuota_iva)
+    if reglas.precios_incluyen_iva is True:
+        return Decimal("0.00"), "Precios con IVA incluido."
+    if reglas.precios_incluyen_iva is False:
+        if reglas.iva_en_presupuesto == IvaEnPresupuesto.SUMAR:
+            iva = (neto * reglas.alicuota_iva / 100).quantize(CENTAVO, ROUND_HALF_UP)
+            return iva, f"Precios sin IVA. Se suma IVA {alicuota} %."
+        return Decimal("0.00"), f"Precios sin IVA (+ IVA {alicuota} %)."
+    return Decimal("0.00"), None

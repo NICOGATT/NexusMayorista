@@ -104,6 +104,7 @@ Cada día tiene una lista para ir tildando y una condición de "listo" para sabe
 - [ ] Tests de borde: 11, 12, 49 y 50 unidades; precio por talle; ítem sin producto; total con descuento.
 - [ ] Endpoint `POST /presupuestos/calcular`.
 - [ ] Confirmar con la fábrica las preguntas abiertas: escala por producto o por ítem, precios con o sin IVA.
+  - Se cargan en el frontend (**Configuración → Reglas comerciales**); el motor las aplica y se genera una ficha (PDF o WhatsApp) para que la fábrica las confirme.
 
 **Listo cuando:** todos los tests del motor pasan. **Hito: la API calcula presupuestos.**
 

@@ -16,8 +16,10 @@ from app.services.calculo import (
     EscalaPor,
     EscalaPrecio,
     ItemPedido,
+    IvaEnPresupuesto,
     ListaCalculo,
     ProductoInfo,
+    ReglasCalculo,
     calcular_presupuesto,
     elegir_precio,
 )
@@ -109,12 +111,12 @@ def test_talles_y_colores_suman_para_la_escala_pero_otro_producto_no() -> None:
 
 def test_escala_por_item_si_la_fabrica_lo_decide() -> None:
     resultado = calcular_presupuesto(
-        [remeras(12, "M"), remeras(12, "L")], LISTA, escala_por=EscalaPor.ITEM
+        [remeras(12, "M"), remeras(12, "L")], LISTA, reglas=ReglasCalculo(escala_por=EscalaPor.ITEM)
     )
     assert [i.precio_unitario for i in resultado.items] == [Decimal("4500.00")] * 2
 
     resultado = calcular_presupuesto(
-        [remeras(6, "M"), remeras(6, "L")], LISTA, escala_por=EscalaPor.ITEM
+        [remeras(6, "M"), remeras(6, "L")], LISTA, reglas=ReglasCalculo(escala_por=EscalaPor.ITEM)
     )
     assert [i.precio_unitario for i in resultado.items] == [Decimal("5000.00")] * 2
 
@@ -282,3 +284,102 @@ def test_los_importes_son_exactos_al_centavo() -> None:
     resultado = calcular_presupuesto([remeras(3, "S"), remeras(3, "M")], lista)
 
     assert resultado.total == Decimal("0.60")  # con float daría 0.6000000000000001
+
+
+# ------------------------------------------- reglas comerciales (respuestas de la fábrica)
+
+
+def test_sin_reglas_no_hay_iva_ni_leyenda() -> None:
+    resultado = calcular_presupuesto([remeras(12)], LISTA)
+
+    assert resultado.iva == Decimal("0.00")
+    assert resultado.leyenda_iva is None
+
+
+def test_precios_con_iva_incluido_no_cambian_el_total() -> None:
+    reglas = ReglasCalculo(precios_incluyen_iva=True)
+    resultado = calcular_presupuesto([remeras(12)], LISTA, reglas=reglas)
+
+    assert resultado.total == Decimal("54000.00")
+    assert resultado.iva == Decimal("0.00")
+    assert resultado.leyenda_iva == "Precios con IVA incluido."
+
+
+def test_precios_sin_iva_que_se_suma_al_total_despues_del_descuento() -> None:
+    # 54.000 − 4.000 = 50.000 neto → IVA 21 % = 10.500 → total 60.500
+    reglas = ReglasCalculo(precios_incluyen_iva=False, iva_en_presupuesto=IvaEnPresupuesto.SUMAR)
+    resultado = calcular_presupuesto([remeras(12)], LISTA, descuento=Decimal("4000"), reglas=reglas)
+
+    assert resultado.iva == Decimal("10500.00")
+    assert resultado.total == Decimal("60500.00")
+    assert resultado.leyenda_iva == "Precios sin IVA. Se suma IVA 21 %."
+
+
+def test_iva_con_alicuota_reducida_redondea_al_centavo() -> None:
+    # 3 × 4.999,99 = 14.999,97 → 10,5 % = 1.574,99685 → 1.575,00
+    lista = ListaCalculo(LISTA.id, "ARS", {REMERA.id: REMERA}, [escala(REMERA, None, 1, "4999.99")])
+    reglas = ReglasCalculo(
+        precios_incluyen_iva=False,
+        alicuota_iva=Decimal("10.5"),
+        iva_en_presupuesto=IvaEnPresupuesto.SUMAR,
+    )
+    resultado = calcular_presupuesto([remeras(3)], lista, reglas=reglas)
+
+    assert resultado.iva == Decimal("1575.00")
+    assert resultado.total == Decimal("16574.97")
+    assert resultado.leyenda_iva == "Precios sin IVA. Se suma IVA 10,5 %."
+
+
+def test_precios_sin_iva_que_solo_se_aclaran() -> None:
+    reglas = ReglasCalculo(precios_incluyen_iva=False, iva_en_presupuesto=IvaEnPresupuesto.ACLARAR)
+    resultado = calcular_presupuesto([remeras(12)], LISTA, reglas=reglas)
+
+    assert resultado.total == Decimal("54000.00")
+    assert resultado.iva == Decimal("0.00")
+    assert resultado.leyenda_iva == "Precios sin IVA (+ IVA 21 %)."
+
+
+def test_pedido_minimo_en_unidades() -> None:
+    reglas = ReglasCalculo(pedido_minimo_unidades=24)
+
+    corto = calcular_presupuesto([remeras(12)], LISTA, reglas=reglas)
+    justo = calcular_presupuesto([remeras(24)], LISTA, reglas=reglas)
+
+    assert corto.requiere_revision
+    assert corto.advertencias == ["El pedido no llega al mínimo de 24 unidades."]
+    assert corto.total == Decimal("54000.00")  # se calcula igual
+    assert not justo.requiere_revision
+
+
+def test_pedido_minimo_en_monto_se_compara_despues_del_descuento() -> None:
+    reglas = ReglasCalculo(pedido_minimo_monto=Decimal("54000"))
+
+    sin_descuento = calcular_presupuesto([remeras(12)], LISTA, reglas=reglas)
+    con_descuento = calcular_presupuesto(
+        [remeras(12)], LISTA, descuento=Decimal("1"), reglas=reglas
+    )
+
+    assert not sin_descuento.requiere_revision
+    assert con_descuento.advertencias == ["El pedido no llega al monto mínimo de $54.000."]
+
+
+def test_minimo_cero_significa_que_no_hay_minimo() -> None:
+    reglas = ReglasCalculo(pedido_minimo_unidades=0, pedido_minimo_monto=Decimal("0"))
+    assert not calcular_presupuesto([remeras(1)], LISTA, reglas=reglas).requiere_revision
+
+
+@pytest.mark.parametrize(
+    ("porcentaje", "revision"),
+    [("10", False), ("10.01", True)],
+)
+def test_descuento_maximo_autorizado(porcentaje: str, revision: bool) -> None:
+    reglas = ReglasCalculo(descuento_maximo_porcentaje=Decimal("10"))
+    resultado = calcular_presupuesto(
+        [remeras(12)], LISTA, descuento_porcentaje=Decimal(porcentaje), reglas=reglas
+    )
+
+    assert resultado.requiere_revision is revision
+    if revision:
+        assert resultado.advertencias == [
+            "El descuento (10,01 %) supera el máximo autorizado (10 %)."
+        ]

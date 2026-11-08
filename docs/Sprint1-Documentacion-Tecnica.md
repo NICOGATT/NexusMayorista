@@ -349,6 +349,14 @@ La API es REST bajo el prefijo `/api/v1`, con JSON en ambos sentidos. Los webhoo
 | PATCH | `/api/v1/presupuestos/{id}/etapa` | Mueve la tarjeta en el tablero: `{ "etapa": "enviado", "posicion_tablero": 2 }` |
 | GET | `/api/v1/presupuestos/{id}/texto` | Genera el texto listo para copiar y pegar en WhatsApp |
 
+### Reglas comerciales
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| GET | `/api/v1/reglas-comerciales` | Preguntas a la fábrica (texto, ayuda, qué cambia) y sus respuestas; `pendientes` cuenta las que faltan |
+| PUT | `/api/v1/reglas-comerciales` | Guarda todas las respuestas (lo que no viene queda sin responder) y registra quién las cambió |
+| GET | `/api/v1/reglas-comerciales/ficha` | Ficha para que la fábrica confirme: respuestas en lenguaje llano, preguntas pendientes y `texto_whatsapp` |
+
 ### Tablero
 
 | Método | Ruta | Descripción |
@@ -747,7 +755,7 @@ El Sprint 1 tiene 8 historias y 45 puntos. Con una sola persona en el equipo se 
 
 | Caso | Resultado |
 | --- | --- |
-| Escala | Fila con la mayor `cantidad_minima` que no supere el total del producto (todos los talles y colores). Si la fábrica decide "por ítem", se cambia con `escala_por=EscalaPor.ITEM` |
+| Escala | Fila con la mayor `cantidad_minima` que no supere el total del producto (todos los talles y colores), o la cantidad del ítem si las reglas comerciales dicen "por ítem" |
 | Precio por talle | Si el talle tiene filas propias aplicables, mandan; si ninguna aplica por cantidad, se usa la escala general |
 | Sin producto, código inexistente o sin precio en la lista | Sin precio, no suma, revisión |
 | Talle que el producto no tiene | Sin precio, no suma, revisión (no cuenta para la escala) |
@@ -756,7 +764,25 @@ El Sprint 1 tiene 8 historias y 45 puntos. Con una sola persona en el equipo se 
 | `precio_propuesto` (IA) distinto del calculado | Queda el del sistema, revisión "Diferencia de precio IA vs. lista" |
 | Descuento | `descuento` (monto) o `descuento_porcentaje` (redondeo al centavo, mitad hacia arriba); nunca mayor al subtotal |
 
-Los importes se calculan con `Decimal`, nunca con `float`. Los precios se toman tal como están en la lista (con o sin IVA según cómo los cargue la fábrica; pregunta abierta).
+Los importes se calculan con `Decimal`, nunca con `float`.
+
+#### Reglas comerciales (respuestas de la fábrica)
+
+Las preguntas abiertas con la fábrica se cargan desde el frontend (**Configuración → Reglas comerciales**) y se guardan en la tabla `reglas_comerciales` (una sola fila, migración `0002`). Cada campo en null es una pregunta sin responder y deja el comportamiento por defecto. El endpoint `/presupuestos/calcular` lee la fila en cada cálculo y se la pasa al motor como `ReglasCalculo`.
+
+| Pregunta | Campo | Efecto en el cálculo |
+| --- | --- | --- |
+| ¿Escala por producto o por ítem? | `escala_por` | Cantidad con la que se elige la escala. Por defecto: por producto |
+| ¿Los precios incluyen IVA? | `precios_incluyen_iva` | Leyenda `leyenda_iva` ("Precios con IVA incluido." / "Precios sin IVA…") |
+| ¿Qué alícuota? | `alicuota_iva` | Por defecto 21 % |
+| Si son sin IVA, ¿se suma o se aclara? | `iva_en_presupuesto` | `sumar`: `iva` = (subtotal − descuento) × alícuota, redondeado al centavo, y se suma al `total`. `aclarar`: el total queda neto |
+| ¿Pedido mínimo en unidades? | `pedido_minimo_unidades` | Si no llega: advertencia y revisión. 0 = no hay mínimo |
+| ¿Pedido mínimo en monto? | `pedido_minimo_monto` | Se compara con subtotal − descuento (sin IVA). 0 = no hay mínimo |
+| ¿Descuento máximo sin autorización? | `descuento_maximo_porcentaje` | Si el descuento efectivo lo supera: advertencia y revisión. 100 = sin tope |
+| ¿Validez del presupuesto? | `validez_dias` | Se usará en el presupuesto guardado y en el texto para WhatsApp (HU-07) |
+| ¿Condiciones de pago y entrega? | `condiciones_pago` | Pie del presupuesto y del texto para WhatsApp (HU-07) |
+
+Además se guarda quién de la fábrica confirmó (`confirmado_por`, `confirmado_el`), notas y quién lo cargó (`actualizado_por`, del JWT). Con las respuestas se genera la **ficha para la fábrica** (`GET /reglas-comerciales/ficha`): se imprime o se guarda como PDF con lugar para la firma, o se copia como texto para WhatsApp, para que la fábrica confirme por escrito. Cuando se arme el prompt de la IA (Día 6), las reglas también se le pasan para que no proponga precios con otra escala.
 
 ### HU-06 · Tablero de prospectos
 
@@ -861,7 +887,9 @@ Total: 45 puntos.
 
 ### Preguntas abiertas
 
-- ¿La escala de precios se aplica por producto (sumando talles y colores) o por ítem? El prompt y el motor asumen por producto.
+> Las preguntas que cambian el cálculo (escala, IVA, pedido mínimo, descuento máximo, validez y condiciones) se responden en **Configuración → Reglas comerciales** y se confirman con la ficha que genera el sistema; ver [HU-05](#hu-05--calcular-el-presupuesto).
+
+- ¿La escala de precios se aplica por producto (sumando talles y colores) o por ítem? El motor asume por producto hasta que se responda en Reglas comerciales.
 - ¿Hay descuentos por forma de pago (transferencia, efectivo) que deban entrar en el Sprint 1?
-- ¿Los precios se publican con o sin IVA?
+- ¿Los precios se publican con o sin IVA? Se responde en Reglas comerciales.
 - ¿Cuántos vendedores usarán el sistema y se reparten los clientes?

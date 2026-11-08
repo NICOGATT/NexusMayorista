@@ -64,6 +64,10 @@ class PresupuestoCalculadoSalida(BaseModel):
     total_unidades: int
     subtotal: Dinero
     descuento: Dinero
+    iva: Dinero = Field(description="IVA sumado al total; 0 si no corresponde sumarlo")
     total: Dinero
+    leyenda_iva: str | None = Field(
+        description="Cómo leer los importes respecto del IVA, según las reglas comerciales"
+    )
     requiere_revision: bool
     advertencias: list[str]

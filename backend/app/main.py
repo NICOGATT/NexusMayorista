@@ -3,11 +3,19 @@
 import logging
 
 from fastapi import APIRouter, Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import usuario_actual
 from app.config import get_settings
 from app.errores import registrar_manejadores
-from app.routers import health, listas_precios, presupuestos, productos, usuarios
+from app.routers import (
+    health,
+    listas_precios,
+    presupuestos,
+    productos,
+    reglas_comerciales,
+    usuarios,
+)
 
 
 def configurar_logging(nivel: str) -> None:
@@ -27,6 +35,12 @@ def create_app() -> FastAPI:
         description="CRM mayorista de ropa: catálogo, presupuestos y tablero.",
     )
     registrar_manejadores(app)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.cors_origenes.split(",") if o.strip()],
+        allow_methods=["*"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
     # Públicos: /health y, más adelante, /webhooks/* (se autentican con la firma de Meta).
     app.include_router(health.router)
@@ -37,6 +51,7 @@ def create_app() -> FastAPI:
     api.include_router(productos.router)
     api.include_router(listas_precios.router)
     api.include_router(presupuestos.router)
+    api.include_router(reglas_comerciales.router)
     app.include_router(api)
 
     return app

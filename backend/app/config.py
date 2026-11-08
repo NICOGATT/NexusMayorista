@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     entorno: str = Field(default="desarrollo", alias="ENTORNO")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    # Orígenes del frontend que pueden llamar a la API (separados por coma).
+    cors_origenes: str = Field(default="http://localhost:3000", alias="CORS_ORIGENES")
 
     # Base de datos (Supabase / PostgreSQL)
     database_url: str = Field(alias="DATABASE_URL")

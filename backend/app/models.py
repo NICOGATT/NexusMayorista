@@ -108,3 +108,53 @@ Index(
     Precio.cantidad_minima,
     unique=True,
 )
+
+
+class ReglasComerciales(Base):
+    """Definiciones de la fábrica que cambian cómo se calcula un presupuesto.
+
+    Una sola fila (id = 1). Cada campo en null significa "la fábrica todavía no
+    respondió": el motor usa entonces el comportamiento por defecto.
+    """
+
+    __tablename__ = "reglas_comerciales"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="reglas_comerciales_fila_unica"),
+        CheckConstraint(
+            "escala_por in ('producto', 'item')", name="reglas_comerciales_escala_por_check"
+        ),
+        CheckConstraint(
+            "iva_en_presupuesto in ('sumar', 'aclarar')",
+            name="reglas_comerciales_iva_en_presupuesto_check",
+        ),
+        CheckConstraint(
+            "alicuota_iva >= 0 and alicuota_iva <= 100",
+            name="reglas_comerciales_alicuota_iva_check",
+        ),
+        CheckConstraint(
+            "descuento_maximo_porcentaje >= 0 and descuento_maximo_porcentaje <= 100",
+            name="reglas_comerciales_descuento_maximo_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    escala_por: Mapped[str | None] = mapped_column(Text, comment="producto | item")
+    precios_incluyen_iva: Mapped[bool | None] = mapped_column(Boolean)
+    alicuota_iva: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    iva_en_presupuesto: Mapped[str | None] = mapped_column(
+        Text, comment="Si los precios no incluyen IVA: sumar | aclarar"
+    )
+    pedido_minimo_unidades: Mapped[int | None] = mapped_column(Integer)
+    pedido_minimo_monto: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    descuento_maximo_porcentaje: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    validez_dias: Mapped[int | None] = mapped_column(Integer)
+    condiciones_pago: Mapped[str | None] = mapped_column(Text)
+    notas: Mapped[str | None] = mapped_column(Text)
+    confirmado_por: Mapped[str | None] = mapped_column(
+        Text, comment="Quién de la fábrica confirmó las respuestas"
+    )
+    confirmado_el: Mapped[date | None] = mapped_column(Date)
+    actualizado_por: Mapped[str | None] = mapped_column(Text)
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
