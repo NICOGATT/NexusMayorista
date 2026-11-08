@@ -41,7 +41,7 @@ const CONTROLES: Record<
     sufijo: "%",
     paso: 0.5,
     atajos: [
-      { valor: 21, etiqueta: "21 %" },
+      { valor: 21, etiqueta: "21 % (lo habitual en ropa)" },
       { valor: 10.5, etiqueta: "10,5 %" },
     ],
   },
@@ -79,8 +79,11 @@ function respondida(valor: unknown) {
   return valor !== null && valor !== undefined && valor !== "";
 }
 
+/** El porcentaje de IVA y si se suma o se aclara solo importan con precios sin IVA. */
+const SOLO_SI_PRECIOS_SIN_IVA: CampoPregunta[] = ["alicuota_iva", "iva_en_presupuesto"];
+
 function aplica(campo: CampoPregunta, r: Respuestas) {
-  return campo !== "iva_en_presupuesto" || r.precios_incluyen_iva === false;
+  return !SOLO_SI_PRECIOS_SIN_IVA.includes(campo) || r.precios_incluyen_iva === false;
 }
 
 export default function ReglasComerciales() {

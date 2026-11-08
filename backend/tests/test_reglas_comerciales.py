@@ -3,6 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.models import ReglasComerciales
@@ -60,13 +61,14 @@ def test_las_respuestas_pasan_al_motor() -> None:
     assert reglas.pedido_minimo_unidades == 6
 
 
-def test_iva_en_presupuesto_solo_se_pregunta_si_los_precios_son_sin_iva() -> None:
+@pytest.mark.parametrize("campo", ["alicuota_iva", "iva_en_presupuesto"])
+def test_preguntas_de_iva_solo_si_los_precios_son_sin_iva(campo: str) -> None:
     campos = lambda fila: {p.campo for p in pendientes(fila)}  # noqa: E731
 
-    assert "iva_en_presupuesto" not in campos(ReglasComerciales(id=1))
-    assert "iva_en_presupuesto" not in campos(ReglasComerciales(id=1, precios_incluyen_iva=True))
-    assert "iva_en_presupuesto" in campos(ReglasComerciales(id=1, precios_incluyen_iva=False))
-    assert len(pendientes(ReglasComerciales(id=1))) == len(PREGUNTAS) - 1
+    assert campo not in campos(ReglasComerciales(id=1))
+    assert campo not in campos(ReglasComerciales(id=1, precios_incluyen_iva=True))
+    assert campo in campos(ReglasComerciales(id=1, precios_incluyen_iva=False))
+    assert len(pendientes(ReglasComerciales(id=1))) == len(PREGUNTAS) - 2
 
 
 def test_respuestas_legibles() -> None:
@@ -87,7 +89,7 @@ def test_ficha_con_respuestas_y_pendientes() -> None:
         "Por producto: se suman todos los talles y colores del mismo producto.",
         "Sí, los precios incluyen IVA.",
     ]
-    assert len(ficha.pendientes) == len(PREGUNTAS) - 3  # 2 respondidas + 1 que no aplica
+    assert len(ficha.pendientes) == len(PREGUNTAS) - 4  # 2 respondidas + 2 que no aplican
     texto = ficha.texto_whatsapp
     assert texto.startswith("*Definiciones comerciales*\nGenerada el 08/11/2026.")
     assert "*Precios y escalas*" in texto
@@ -112,7 +114,7 @@ def test_get_sin_fila_devuelve_todo_sin_responder(api: TestClient) -> None:
     cuerpo = api.get("/api/v1/reglas-comerciales").json()
 
     assert cuerpo["escala_por"] is None
-    assert cuerpo["pendientes"] == len(PREGUNTAS) - 1
+    assert cuerpo["pendientes"] == len(PREGUNTAS) - 2
     assert [p["campo"] for p in cuerpo["preguntas"]][:2] == ["escala_por", "precios_incluyen_iva"]
     assert all(not p["respondida"] for p in cuerpo["preguntas"])
 

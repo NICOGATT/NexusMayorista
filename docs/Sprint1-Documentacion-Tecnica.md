@@ -774,7 +774,7 @@ Las preguntas abiertas con la fábrica se cargan desde el frontend (**Configurac
 | --- | --- | --- |
 | ¿Escala por producto o por ítem? | `escala_por` | Cantidad con la que se elige la escala. Por defecto: por producto |
 | ¿Los precios incluyen IVA? | `precios_incluyen_iva` | Leyenda `leyenda_iva` ("Precios con IVA incluido." / "Precios sin IVA…") |
-| ¿Qué alícuota? | `alicuota_iva` | Por defecto 21 % |
+| Si son sin IVA, ¿qué porcentaje de IVA se suma? | `alicuota_iva` | Solo se pregunta con precios sin IVA. Por defecto 21 % |
 | Si son sin IVA, ¿se suma o se aclara? | `iva_en_presupuesto` | `sumar`: `iva` = (subtotal − descuento) × alícuota, redondeado al centavo, y se suma al `total`. `aclarar`: el total queda neto |
 | ¿Pedido mínimo en unidades? | `pedido_minimo_unidades` | Si no llega: advertencia y revisión. 0 = no hay mínimo |
 | ¿Pedido mínimo en monto? | `pedido_minimo_monto` | Se compara con subtotal − descuento (sin IVA). 0 = no hay mínimo |

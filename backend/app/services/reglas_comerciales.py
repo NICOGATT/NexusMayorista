@@ -58,9 +58,10 @@ PREGUNTAS: tuple[Pregunta, ...] = (
     Pregunta(
         "alicuota_iva",
         "IVA",
-        "¿Qué alícuota de IVA corresponde?",
-        "En indumentaria suele ser 21 %.",
-        "Se usa para sumar o aclarar el IVA.",
+        "¿Qué porcentaje de IVA hay que sumarle a esos precios?",
+        "En la ropa casi siempre es 21 %: una prenda de $10.000 sin IVA queda en $12.100 "
+        "con IVA. Si hay dudas, lo confirma el contador de la fábrica.",
+        "Con este porcentaje se calcula el IVA del presupuesto.",
     ),
     Pregunta(
         "iva_en_presupuesto",
@@ -134,9 +135,12 @@ def guardar(db: Session, valores: dict, *, usuario: str | None) -> ReglasComerci
     return fila
 
 
+SOLO_SI_PRECIOS_SIN_IVA = ("alicuota_iva", "iva_en_presupuesto")
+
+
 def aplica(campo: str, fila: ReglasComerciales) -> bool:
-    """`iva_en_presupuesto` solo se pregunta si los precios son sin IVA."""
-    return campo != "iva_en_presupuesto" or fila.precios_incluyen_iva is False
+    """El porcentaje de IVA y si se suma o se aclara solo importan con precios sin IVA."""
+    return campo not in SOLO_SI_PRECIOS_SIN_IVA or fila.precios_incluyen_iva is False
 
 
 def respondida(campo: str, fila: ReglasComerciales) -> bool:
