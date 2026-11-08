@@ -10,6 +10,7 @@ function FormularioLogin() {
   const volver = useSearchParams().get("volver") || "/";
   const [email, setEmail] = useState("");
   const [clave, setClave] = useState("");
+  const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -45,14 +46,25 @@ function FormularioLogin() {
       </label>
       <label className="block text-sm">
         Contraseña
-        <input
-          type="password"
-          required
-          autoComplete="current-password"
-          value={clave}
-          onChange={(e) => setClave(e.target.value)}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
-        />
+        <div className="mt-1 flex rounded-md border border-neutral-300 focus-within:border-neutral-900">
+          <input
+            type={verClave ? "text" : "password"}
+            required
+            autoComplete="current-password"
+            value={clave}
+            onChange={(e) => setClave(e.target.value)}
+            className="w-full rounded-md px-3 py-2 outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => setVerClave((v) => !v)}
+            aria-label={verClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+            aria-pressed={verClave}
+            className="shrink-0 px-3 text-sm text-neutral-500 hover:text-neutral-900"
+          >
+            {verClave ? "Ocultar" : "Mostrar"}
+          </button>
+        </div>
       </label>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button
