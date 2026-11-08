@@ -2,6 +2,9 @@ import { supabase } from "./supabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/** Clave de sessionStorage con el motivo por el que se cerró la sesión. */
+export const MOTIVO_LOGIN = "motivo_login";
+
 /** Error con el formato único de la API: `{ "error": ..., "detalle": ... }`. */
 export class ErrorApi extends Error {
   constructor(
@@ -30,6 +33,13 @@ export async function api<T>(ruta: string, opciones: RequestInit = {}): Promise<
   if (!respuesta.ok) {
     const cuerpo = await respuesta.json().catch(() => ({}));
     if (respuesta.status === 401) {
+      // El login muestra el motivo: si no, solo se ve que "vuelve al login".
+      try {
+        sessionStorage.setItem(
+          MOTIVO_LOGIN,
+          `La API rechazó la sesión: ${typeof cuerpo.detalle === "string" ? cuerpo.detalle : "token inválido"}`,
+        );
+      } catch {}
       await supabase.auth.signOut();
     }
     throw new ErrorApi(respuesta.status, cuerpo.error ?? "error", cuerpo.detalle);

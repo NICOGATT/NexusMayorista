@@ -1,9 +1,28 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
-import { supabase } from "@/lib/supabase";
+import type { AuthError } from "@supabase/supabase-js";
+
+import { MOTIVO_LOGIN } from "@/lib/api";
+import { supabase, supabaseConfigurado } from "@/lib/supabase";
+
+function mensajeLogin(error: AuthError): string {
+  if (error.name === "AuthRetryableFetchError" || error.status === 0) {
+    return "No se pudo conectar con Supabase. Revisá la URL en .env.local y tu conexión.";
+  }
+  if (error.code === "email_not_confirmed") {
+    return "El email no está confirmado. En Supabase, confirmá el usuario o crealo con Auto Confirm.";
+  }
+  if (error.code === "invalid_credentials") {
+    return "Email o contraseña incorrectos.";
+  }
+  if (error.status === 401 || /api key/i.test(error.message)) {
+    return "Supabase rechazó la clave pública. Revisá NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local.";
+  }
+  return `No se pudo entrar: ${error.message}`;
+}
 
 function FormularioLogin() {
   const router = useRouter();
@@ -14,14 +33,31 @@ function FormularioLogin() {
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
+  useEffect(() => {
+    try {
+      const motivo = sessionStorage.getItem(MOTIVO_LOGIN);
+      if (motivo) {
+        sessionStorage.removeItem(MOTIVO_LOGIN);
+        setError(motivo);
+      }
+    } catch {}
+  }, []);
+
   async function entrar(evento: React.FormEvent) {
     evento.preventDefault();
+    if (!supabaseConfigurado) {
+      setError(
+        "Falta configurar Supabase: completá NEXT_PUBLIC_SUPABASE_URL y " +
+          "NEXT_PUBLIC_SUPABASE_ANON_KEY en frontend/.env.local y reiniciá npm run dev.",
+      );
+      return;
+    }
     setEnviando(true);
     setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password: clave });
     setEnviando(false);
     if (error) {
-      setError("Email o contraseña incorrectos.");
+      setError(mensajeLogin(error));
       return;
     }
     router.replace(volver.startsWith("/") ? volver : "/");

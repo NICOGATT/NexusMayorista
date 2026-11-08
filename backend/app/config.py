@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,7 +28,9 @@ class Settings(BaseSettings):
     # Supabase
     supabase_url: str = Field(default="", alias="SUPABASE_URL")
     supabase_service_role_key: str = Field(default="", alias="SUPABASE_SERVICE_ROLE_KEY")
-    supabase_jwt_secret: str = Field(alias="SUPABASE_JWT_SECRET")
+    # Tokens HS256 (JWT Secret "legacy"). Los proyectos con claves de firma nuevas
+    # (ES256/RS256) se validan con las claves públicas de SUPABASE_URL (JWKS).
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
     supabase_jwt_audience: str = Field(default="authenticated", alias="SUPABASE_JWT_AUDIENCE")
 
     # Claude
@@ -38,6 +41,13 @@ class Settings(BaseSettings):
     meta_verify_token: str = Field(default="", alias="META_VERIFY_TOKEN")
     whatsapp_token: str = Field(default="", alias="WHATSAPP_TOKEN")
     whatsapp_phone_number_id: str = Field(default="", alias="WHATSAPP_PHONE_NUMBER_ID")
+
+    @property
+    def supabase_jwks_url(self) -> str:
+        """Claves públicas con las que Supabase firma los tokens (ES256/RS256)."""
+        # Solo el dominio: SUPABASE_URL a veces se copia con "/rest/v1/" al final.
+        partes = urlsplit(self.supabase_url.strip())
+        return f"{partes.scheme}://{partes.netloc}/auth/v1/.well-known/jwks.json"
 
     @property
     def sqlalchemy_url(self) -> str:
