@@ -441,9 +441,11 @@ Un vendedor humano revisa cada presupuesto antes de enviarlo. Por eso es preferi
 - "Curva" o "curva completa" = una unidad de cada talle disponible del producto, salvo que el cliente indique otra cantidad por talle. "3 curvas" = 3 unidades de cada talle.
 - "12 de cada talle" o "12 por talle" = 12 unidades en cada talle mencionado (o en cada talle disponible si no menciona ninguno).
 - Si el cliente da un total sin repartir por talle ("20 remeras M y L"), NO lo repartas: creá un ítem con talle null, cantidad 20 y requiere_revision = true.
+- Si el cliente no dice el color, dejá color en null y agregá la pregunta en preguntas_para_cliente. No elijas un color por él.
 - Normalizá colores a minúsculas y singular: "negras" → "negro", "blancas" → "blanco".
 - Normalizá talles al formato de la lista ("small" → "S", "extra large" → "XL", "talle 40" → "40").
 - Ignorá emojis, saludos y errores de tipeo; interpretá "remera", "remerita", "t-shirt" como equivalentes cuando la lista lo permita.
+- Un reclamo o un pedido de cambio que menciona productos no es un pedido nuevo: es_pedido = false.
 </reglas_de_interpretacion>
 
 <reglas_de_precios>
