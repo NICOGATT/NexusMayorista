@@ -33,7 +33,7 @@ Frontend, desde `frontend/`: `npm run dev`, `npm run lint`, `npm run build`. Par
 La CI (`.github/workflows/ci.yml`) corre ruff (check + format), pytest, ESLint y el build. Antes de dar algo por terminado, los tests y ruff tienen que quedar en verde.
 
 ## Forma de trabajo
-- Todo en **español** (rioplatense): código de dominio, comentarios, documentación, commits y explicaciones.
+- Todo en **español** (porteño): código de dominio, comentarios, documentación, commits y explicaciones.
 - **Una rama por historia** (`feature/HU-xx-descripcion`) y PR a `main`. Nunca commitear directo en `main`.
 - Commits estilo `feat:` / `fix:` / `docs:` / `chore:`, mencionando la historia (por ejemplo `feat: HU-04 ...`).
 - Al cerrar una tarea, agregar o actualizar la entrada del día en `docs/log-sprint1.md` (Hice / Sigue / Bloqueos).
